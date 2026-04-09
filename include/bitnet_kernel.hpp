@@ -74,14 +74,14 @@ public:
 // ---------------------------------------------------------
 // COMPONENT 3: Sovereign Agent Memory Payload (Phase 3 & 4)
 // ---------------------------------------------------------
-struct AgentPayload {
+struct NodeMemory {
     uint32_t agent_id;
     uint32_t max_capacity;
     uint32_t current_tokens;
     std::vector<uint32_t> token_cache;
     std::vector<float> contextual_state; 
 
-    AgentPayload(uint32_t id, uint32_t capacity, uint32_t state_dim) 
+    NodeMemory(uint32_t id, uint32_t capacity, uint32_t state_dim) 
         : agent_id(id), max_capacity(capacity), current_tokens(0) {
         token_cache.resize(max_capacity, 0);
         contextual_state.resize(state_dim, 0.0f);
@@ -124,24 +124,24 @@ struct AgentPayload {
 // ---------------------------------------------------------
 // COMPONENT 4: Sandbox Interface (Phase 7, 15, 18)
 // ---------------------------------------------------------
-class SandboxKernel {
+class SwarmSimulator {
 private:
     size_t sandbox_memory_limit_bytes;
-    std::unordered_map<uint32_t, AgentPayload> swarm_registry;
+    std::unordered_map<uint32_t, NodeMemory> swarm_registry;
     uint32_t active_agent_count = 0;
 
 public:
     std::vector<int8_t> global_weights;  // Phase 18: Constant Matrix Fabric
 
-    SandboxKernel(size_t hard_limit) : sandbox_memory_limit_bytes(hard_limit) {}
+    SwarmSimulator(size_t hard_limit) : sandbox_memory_limit_bytes(hard_limit) {}
 
     // Phase 18: Hydrating the Neural Fabric centrally
-    void mount_global_fabric(const std::string& filepath) {
+    void load_weight_matrix(const std::string& filepath) {
         global_weights = load_weights_safe(filepath);
     }
     
     // Phase 15: Swarm Spawning Mechanics
-    AgentPayload& spawn_agent(uint32_t id, uint32_t capacity, uint32_t state_dim) {
+    NodeMemory& spawn_agent(uint32_t id, uint32_t capacity, uint32_t state_dim) {
         if (swarm_registry.find(id) != swarm_registry.end()) {
             throw std::runtime_error("Sandbox Registry Fault: Agent ID Collision");
         }
@@ -154,12 +154,12 @@ public:
         }
         
         // Emplace avoids standard constructor copying for fast initialization
-        swarm_registry.emplace(id, AgentPayload(id, capacity, state_dim));
+        swarm_registry.emplace(id, NodeMemory(id, capacity, state_dim));
         active_agent_count++;
         return swarm_registry.at(id);
     }
     
-    AgentPayload& get_agent(uint32_t id) {
+    NodeMemory& get_agent(uint32_t id) {
         return swarm_registry.at(id);
     }
     
@@ -187,7 +187,7 @@ public:
     }
 
     // Phase 8 ingest bounds checking
-    void ingest_text(AgentPayload& agent, Tokenizer& tokenizer, const std::string& input_data) {
+    void ingest_text(NodeMemory& agent, Tokenizer& tokenizer, const std::string& input_data) {
         std::vector<uint32_t> new_tokens = tokenizer.encode(input_data);
         if (agent.current_tokens + new_tokens.size() > agent.max_capacity) {
             throw std::length_error("Sandbox Violation: Tokenized payload overflow");
@@ -204,8 +204,8 @@ public:
             swarm_registry.find(receiver_id) == swarm_registry.end()) {
             throw std::runtime_error("Trade Fault: Target agent does not exist in registry.");
         }
-        AgentPayload& sender = swarm_registry.at(sender_id);
-        AgentPayload& receiver = swarm_registry.at(receiver_id);
+        NodeMemory& sender = swarm_registry.at(sender_id);
+        NodeMemory& receiver = swarm_registry.at(receiver_id);
         
         if (sender.token_cache.size() != receiver.token_cache.size() || 
             sender.contextual_state.size() != receiver.contextual_state.size()) {
@@ -220,7 +220,7 @@ public:
 
     // Phase 17: Swarm Mitosis (Payload Splitting)
     // Sequentially allocates tokens across dynamically spanned agents if data exceeds the target's capacity
-    uint32_t ingest_swarm_text(uint32_t root_agent_id, Tokenizer& tokenizer, const std::string& input_data, uint32_t standard_capacity, uint32_t state_dim) {
+    uint32_t simulate_array_overflow(uint32_t root_agent_id, Tokenizer& tokenizer, const std::string& input_data, uint32_t standard_capacity, uint32_t state_dim) {
         std::vector<uint32_t> incoming_tokens = tokenizer.encode(input_data);
         size_t total_tokens = incoming_tokens.size();
         size_t tokens_processed = 0;
@@ -228,7 +228,7 @@ public:
         uint32_t current_id = root_agent_id;
         
         while (tokens_processed < total_tokens) {
-            AgentPayload& current_agent = get_agent(current_id);
+            NodeMemory& current_agent = get_agent(current_id);
             size_t available_space = current_agent.max_capacity - current_agent.current_tokens;
             
             size_t chunk_size = std::min(available_space, total_tokens - tokens_processed);
@@ -256,7 +256,7 @@ public:
         if (global_weights.empty()) throw std::runtime_error("Execution Fault: Hypervisor Neural Fabric not mapped.");
 
         for (uint32_t iter = root_agent_id; iter <= tail_agent_id; ++iter) {
-            AgentPayload& active = get_agent(iter);
+            NodeMemory& active = get_agent(iter);
             
             // Agent executes AVX2 natively on local state
             // Dummy structural rows=16, cols(weights)=16 parameter dimension for the 64-byte HuggingFace empirical block
@@ -265,7 +265,7 @@ public:
             // Mitotic Chain rule: If this agent is not the tail, seamlessly handoff the mutated result
             if (iter < tail_agent_id) {
                 // To safely overwrite the untouched child state, use std::copy manually for the Trade
-                AgentPayload& next_agent = get_agent(iter + 1);
+                NodeMemory& next_agent = get_agent(iter + 1);
                 std::copy(active.contextual_state.begin(), active.contextual_state.end(), next_agent.contextual_state.begin());
             }
         }

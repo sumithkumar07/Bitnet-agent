@@ -1,25 +1,27 @@
-# Sovereign BitNet Sandbox
+# Single-Bit Neural Simulation Core
 
-An ultra-optimized, floating-point-free `1.58-bit` Terminal executing recursive Agent Swarm architectures entirely bounded within MSVC standard C++.
+An experimental C++ proof-of-concept testing AVX2 constraints and localized array parsing bounds without utilizing external float libraries.
+
+## Status: Experimental / Alpha
+This repository is currently a **simplified simulation sandbox**. It explores mathematical optimizations in `[-1, 0, 1]` matrix operations but does not yet represent a fully functioning production transformer architecture. Future developments aim to gradually implement Attention and complete Neural Nodes phase-by-phase.
 
 ## Architecture
-This engine is built entirely on native Microsoft C/C++ memory isolation utilizing direct AVX2 processing. It is engineered from 20 mathematically verified structural phases ensuring absolute pure data fluidity across multi-agent neural parameters without crashing.
+This engine is built entirely on native C/C++ arrays utilizing direct AVX2 processing. It strictly enforces memory isolation between distinct struct components.
 
 ### Mechanics:
-- **AVX2 Neural Inference:** The entire HuggingFace PyTorch Float matrix is shifted to raw Ternary integers (`[-1, 0, 1]`) globally mapped to the sandbox arrays without duplicate copies natively computing over Intel registries.
-- **Swarm Mitosis:** If a massive dataset attempts to violate the memory array of an Agent, the Agent triggers dynamic Mitosis handling string tokenization buffer bounds gracefully across linearly cloned pointers automatically routing sequentially.
-- **Pure Local Physics:** No Network sockets, no local Database overheads, no Float multiplications.
+- **AVX2 Computation Bounds:** Core integer arrays compute utilizing parallel SIMD instructions mapped through an intrinsic L1 lookup mask. 
+- **Array Overflow Sub-Division:** Large string tokenizations that overflow standard array bounds sequentially spawn dynamic clones to distribute the load locally.
+- **Local Isolation:** No Network sockets, no local Database overheads, no Float multiplications. Execution is restricted strictly inside local terminal physics.
 
 ## Development Verification
-A strict 20-Phase Verification Protocol (`docs/RULES.md`) structurally guarantees that memory constraints across the internal mesh routers scale perfectly. The execution handles arrays dynamically allocating zero `.obj` boundaries or dropping a single state array pointer.
+A strict 20-Phase Verification Protocol (`docs/RULES.md`) structurally logs development.
 
 ## Getting Started
-Ensure you have `cl.exe` (Microsoft Visual Studio Developer Command Prompt).
+Ensure you have the Microsoft Visual C++ Compiler (`cl.exe`) or `vcvars64.bat` accessible through a typical VS Community installation.
 
 ```cmd
-# 1. Start the Visual Studio Dev Prompt
-# 2. Run the provided Build Script
+# Run the provided Build Script (Requires MSVC)
 build.bat
 ```
 
-The resulting `bitnet_daemon.exe` fully boots the Sandbox, hydrates the matrix, initiates Mitosis over heavy payload text limits, and calculates natively across exactly 9 swarm instances utilizing native AVX2 logic exclusively in approximately 24 µs.
+Executing `build.bat` automatically resolves MSVC environments dynamically, compiles `src/main.cpp` using Hardware SIMD (`/arch:AVX2`), and executes an immediate loop to successfully verify zero-crashing array boundaries end-to-end.
