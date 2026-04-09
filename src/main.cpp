@@ -10,14 +10,18 @@ int main() {
     AVX2_Engine engine;
     Tokenizer tokenizer;
 
-    // 2. Load Global Fabric (Phase 18 & 33: JIT Weight Linking)
+    // 2. Load Global Fabric (Phase 18, 33 & 36: Sovereign JIT Linking)
     std::string fabric_file = "real_weights.bin";
     {
-        // For verification, ensure a mock fabric exists on disk for the JIT engine to page
         std::ofstream mock_fabric(fabric_file, std::ios::binary);
-        // 128 bytes * 4 values/byte = 512 values (0x55 = four packed '1' signals)
-        std::vector<int8_t> mock_data(128, 0x55);
-        mock_fabric.write(reinterpret_cast<char*>(mock_data.data()), 128);
+        // Header: Magic 'SOGN' + Dim 16
+        mock_fabric.write("SOGN", 4);
+        uint32_t dim_val = 16;
+        mock_fabric.write(reinterpret_cast<char*>(&dim_val), 4);
+        
+        // Weights: 2 Heads * 3 Projections * 32 bytes/proj + 64 byte FFN = 256 bytes
+        std::vector<int8_t> mock_data(256, 0x55);
+        mock_fabric.write(reinterpret_cast<char*>(mock_data.data()), 256);
     }
     
     try {

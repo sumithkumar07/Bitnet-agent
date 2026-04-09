@@ -92,13 +92,15 @@ struct AVX2_Engine {
         }
     }
     
-    // Phase 28 & 34: Intrinsic QKV Array Pipeline Extracts (Sliced for Heads)
+    // Phase 28, 34 & 36: Intrinsic QKV Array Pipeline (Fixed Offsets)
     void extract_qkv(const std::vector<float>& input_state, std::vector<float>& q, std::vector<float>& k, std::vector<float>& v, const std::vector<int8_t>& w_packed, size_t full_dim, size_t head_dim, size_t head_idx) {
-        // Offset mapping: Head 0 uses first half of weights, Head 1 uses second half
-        size_t head_offset = head_idx * (full_dim * head_dim / 4); 
-        q = forward_pass(input_state, w_packed, head_dim, full_dim, head_offset);
-        k = forward_pass(input_state, w_packed, head_dim, full_dim, head_offset + (full_dim * head_dim / 4));
-        v = forward_pass(input_state, w_packed, head_dim, full_dim, head_offset + (full_dim * head_dim * 2 / 4));
+        // Header (8) + (HeadIdx * 3 * LayerSize)
+        size_t layer_size = (full_dim * head_dim / 4);
+        size_t head_base = 8 + (head_idx * 3 * layer_size);
+        
+        q = forward_pass(input_state, w_packed, head_dim, full_dim, head_base);
+        k = forward_pass(input_state, w_packed, head_dim, full_dim, head_base + layer_size);
+        v = forward_pass(input_state, w_packed, head_dim, full_dim, head_base + 2 * layer_size);
     }
 
     // Phase 29/30/34: Scaled Dot-Product Self-Attention (Neural Gating & Parallel Head Support)
@@ -233,13 +235,23 @@ private:
 public:
     SwarmSimulator(size_t hard_limit) : sandbox_memory_limit_bytes(hard_limit) {}
 
-    // Phase 18 & 33: Connecting the Neural Fabric Path
+    // Phase 18 & 33/36: Connecting the Sovereign Neural Fabric
     void load_weight_matrix(const std::string& filepath) {
-        // We no longer load the matrix into RAM. We just verify existence and store the path.
         std::ifstream file(filepath, std::ios::binary);
         if (!file.is_open()) throw std::runtime_error("Neural Fabric missing at path: " + filepath);
+        
+        // Phase 36: SOGN Magic Number Verification
+        char magic[4];
+        file.read(magic, 4);
+        if (std::string(magic, 4) != "SOGN") {
+            throw std::runtime_error("Sovereign Violation: Invalid Neural Fabric Header (Magic Number Mismatch)");
+        }
+        
+        uint32_t dim_check;
+        file.read(reinterpret_cast<char*>(&dim_check), 4);
+        
         neural_fabric_path = filepath;
-        std::cout << "[SIMULATOR] Neural Fabric Linked: " << filepath << " (JIT Paging Enabled)" << std::endl;
+        std::cout << "[SIMULATOR] Sovereign Fabric Linked: " << filepath << " (Dim: " << dim_check << ")" << std::endl;
     }
     
     // Phase 15: Swarm Spawning Mechanics
@@ -414,7 +426,11 @@ public:
             std::vector<float> residual = active.contextual_state;
             
             // Agent executes AVX2 natively on local state
-            active.contextual_state = engine.forward_pass(active.contextual_state, active_weights, 16, 16); 
+            // Offset: Header (8) + QKV (num_heads * 3 * layer_size)
+            size_t layer_size = (16 * 8 / 4);
+            size_t ffn_offset = 8 + (num_heads * 3 * layer_size);
+
+            active.contextual_state = engine.forward_pass(active.contextual_state, active_weights, 16, 16, ffn_offset); 
             
             // Phase 24: Bound mathematical limits
             engine.apply_relu(active.contextual_state);
