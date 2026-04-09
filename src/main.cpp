@@ -20,19 +20,18 @@ int main() {
         sandbox.global_weights.assign(256, 0x55);
     }
     
-    // 3. Initiate Array Origin
-    uint32_t standard_capacity = 8; // Tiny limit to force Sub-Division mapping locally
+    // 3. Initiate Array Origin (Phase 32: Dynamic Entropy Case)
+    // Low Entropy segment: 'AAAAAAAAAA' (repeated)
+    // High Entropy segment: 'X!Y?Z#$*' (unique)
+    std::string user_prompt = "AAAAAAAAAA          X!Y?Z#$*";
+    uint32_t standard_capacity = 32; 
     uint32_t state_dim = 16;
-    sandbox.spawn_agent(1, standard_capacity, state_dim);
-    std::cout << "[SIMULATOR] Root Node 1 Initialized." << std::endl;
     
-    // 4. Ingest Raw Non-Formatted Network Data & Trigger Dynamic Array Sub-Division 
-    std::string user_prompt = "End stage verification of experimental simulator handling massive tokens.";
-    std::cout << "[SIMULATOR] Ingesting Prompt: '" << user_prompt << "'" << std::endl;
+    sandbox.spawn_agent(1, standard_capacity, state_dim);
     
     auto t1 = std::chrono::high_resolution_clock::now();
     
-    uint32_t tail_id = sandbox.simulate_array_overflow(1, tokenizer, user_prompt, standard_capacity, state_dim);
+    uint32_t tail_id = sandbox.simulate_array_overflow(1, tokenizer, user_prompt, state_dim);
     
     auto t2 = std::chrono::high_resolution_clock::now();
 

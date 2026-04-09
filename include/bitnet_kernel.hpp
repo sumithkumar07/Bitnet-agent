@@ -306,36 +306,46 @@ public:
         receiver.current_tokens = sender.current_tokens;
     }
 
-    // Phase 17: Swarm Mitosis (Payload Splitting)
-    // Sequentially allocates tokens across dynamically spanned agents if data exceeds the target's capacity
-    uint32_t simulate_array_overflow(uint32_t root_agent_id, Tokenizer& tokenizer, const std::string& input_data, uint32_t standard_capacity, uint32_t state_dim) {
+    // Phase 17 & 32: Swarm Mitosis (Neural-Gated Entropy Splitting)
+    // Sequentially allocates tokens across dynamically spanned agents based on Neural Pressure (Entropy)
+    uint32_t simulate_array_overflow(uint32_t root_agent_id, Tokenizer& tokenizer, const std::string& input_data, uint32_t state_dim) {
         std::vector<uint32_t> incoming_tokens = tokenizer.encode(input_data);
         size_t total_tokens = incoming_tokens.size();
         size_t tokens_processed = 0;
         
         uint32_t current_id = root_agent_id;
-        
+        float current_neural_pressure = 0.0f;
+        const float pressure_threshold = 5.0f; // Agentic complexity budget
+        char last_char = 0;
+
         while (tokens_processed < total_tokens) {
             NodeMemory& current_agent = get_agent(current_id);
-            size_t available_space = current_agent.max_capacity - current_agent.current_tokens;
             
-            size_t chunk_size = std::min(available_space, total_tokens - tokens_processed);
+            // Phase 32: Dynamic Entropy Pressure Calculation
+            char c = (tokens_processed < input_data.length()) ? input_data[tokens_processed] : 0;
+            float token_pressure = 1.0f; // Default for unique context
+            if (c == last_char) token_pressure = 0.1f; // Repetitive pattern low load
+            else if (c == ' ') token_pressure = 0.2f;  // Structural white space
             
-            for (size_t i = 0; i < chunk_size; ++i) {
-                current_agent.token_cache[current_agent.current_tokens + i] = incoming_tokens[tokens_processed + i];
+            last_char = c;
+
+            // Check if this token would exceed the neural budget of the current agent
+            if (current_neural_pressure + token_pressure > pressure_threshold || current_agent.current_tokens >= current_agent.max_capacity) {
+                // Mitosis triggers: Spawn a new node to handle the cognitive overflow
+                current_id++;
+                spawn_agent(current_id, 32, state_dim); // Increased capacity buffer for variable pressure
+                current_neural_pressure = 0.0f;
+                continue; // Restart logic with the new agent
             }
-            
-            current_agent.current_tokens += chunk_size;
-            tokens_processed += chunk_size;
-            
-            // If there's still tokens left in the pipeline, Mitosis triggers
-            if (tokens_processed < total_tokens) {
-                current_id++; // The simplest sequential spanning ID mechanism for Mitosis 
-                spawn_agent(current_id, standard_capacity, state_dim); // Spawns the clone cleanly
-            }
+
+            // Ingest token into the active agent's cache
+            current_agent.token_cache[current_agent.current_tokens] = incoming_tokens[tokens_processed];
+            current_agent.current_tokens++;
+            current_neural_pressure += token_pressure;
+            tokens_processed++;
         }
         
-        return current_id; // Returns the ID of the final agent who holds the tail of the data
+        return current_id;
     }
 
     // Phase 19: Hardware Sequential Inference
