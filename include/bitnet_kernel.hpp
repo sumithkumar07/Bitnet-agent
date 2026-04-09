@@ -81,6 +81,14 @@ struct AVX2_Engine {
             x[i] /= rms;
         }
     }
+
+    // Phase 27: Mathematical Residual Connections
+    void apply_residual(std::vector<float>& target, const std::vector<float>& skip) {
+        size_t size = target.size();
+        for (size_t i = 0; i < size; ++i) {
+            target[i] += skip[i];
+        }
+    }
 };
 
 // ---------------------------------------------------------
@@ -295,6 +303,9 @@ public:
                 }
             }
             
+            // Phase 27: Isolate Matrix Cache string prior to matrix multiplier loop explicitly
+            std::vector<float> residual = active.contextual_state;
+            
             // Agent executes AVX2 natively on local state
             // Dummy structural rows=16, cols(weights)=16 parameter dimension for the 64-byte HuggingFace empirical block
             active.contextual_state = engine.forward_pass(active.contextual_state, global_weights, 16, 16); 
@@ -304,6 +315,9 @@ public:
             
             // Phase 26: RMS Normalization stabilizing mathematical explosions
             engine.apply_rmsnorm(active.contextual_state);
+            
+            // Phase 27: Combine residual history structurally bypassing historical decay loop natively
+            engine.apply_residual(active.contextual_state, residual);
             
             // Mitotic Chain rule: If this agent is not the tail, seamlessly handoff the mutated result
             if (iter < tail_agent_id) {
