@@ -89,6 +89,13 @@ struct AVX2_Engine {
             target[i] += skip[i];
         }
     }
+    
+    // Phase 28: Intrinsic QKV Array Pipeline Extracts
+    void extract_qkv(std::vector<float>& input_state, std::vector<float>& q, std::vector<float>& k, std::vector<float>& v, const std::vector<int8_t>& w_packed, size_t dim) {
+        q = forward_pass(input_state, w_packed, dim, dim);
+        k = forward_pass(input_state, w_packed, dim, dim);
+        v = forward_pass(input_state, w_packed, dim, dim);
+    }
 };
 
 // ---------------------------------------------------------
@@ -118,11 +125,19 @@ struct NodeMemory {
     uint32_t current_tokens;
     std::vector<uint32_t> token_cache;
     std::vector<float> contextual_state; 
+    
+    // Phase 28: Structural Attention Arrays
+    std::vector<float> query;
+    std::vector<float> key;
+    std::vector<float> value;
 
     NodeMemory(uint32_t id, uint32_t capacity, uint32_t state_dim) 
         : agent_id(id), max_capacity(capacity), current_tokens(0) {
         token_cache.resize(max_capacity, 0);
         contextual_state.resize(state_dim, 0.0f);
+        query.resize(state_dim, 0.0f);
+        key.resize(state_dim, 0.0f);
+        value.resize(state_dim, 0.0f);
     }
     
     // Phase 3 & 11: Freezing logic
@@ -302,6 +317,9 @@ public:
                     active.contextual_state[t] += static_cast<float>(active.token_cache[t]) * 0.01f;
                 }
             }
+            
+            // Phase 28: Formally Extract Structural Logic for Attention Loop Native Bounds
+            engine.extract_qkv(active.contextual_state, active.query, active.key, active.value, global_weights, 16);
             
             // Phase 27: Isolate Matrix Cache string prior to matrix multiplier loop explicitly
             std::vector<float> residual = active.contextual_state;
