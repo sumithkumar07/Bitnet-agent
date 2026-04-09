@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <immintrin.h>
+#include <cmath>
 
 // ---------------------------------------------------------
 // COMPONENT 1: AVX2 SIMD Hardware Overdrive (Phase 6)
@@ -64,6 +65,20 @@ struct AVX2_Engine {
         }
         for (; i < size; ++i) {
             if (x[i] < 0.0f) x[i] = 0.0f;
+        }
+    }
+
+    // Phase 26: RMS Normalization
+    void apply_rmsnorm(std::vector<float>& x) {
+        float eps = 1e-6f;
+        float sum_sq = 0.0f;
+        size_t size = x.size();
+        for (size_t i = 0; i < size; ++i) {
+            sum_sq += x[i] * x[i];
+        }
+        float rms = std::sqrt(sum_sq / size + eps);
+        for (size_t i = 0; i < size; ++i) {
+            x[i] /= rms;
         }
     }
 };
@@ -286,6 +301,9 @@ public:
             
             // Phase 24: Bound mathematical limits using isolated ReLU sequence
             engine.apply_relu(active.contextual_state);
+            
+            // Phase 26: RMS Normalization stabilizing mathematical explosions
+            engine.apply_rmsnorm(active.contextual_state);
             
             // Mitotic Chain rule: If this agent is not the tail, seamlessly handoff the mutated result
             if (iter < tail_agent_id) {
