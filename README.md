@@ -1,63 +1,52 @@
-# BitNet-Agent: Advanced 1.58-bit Sovereign Swarm Engine
+# BitNet-Agent: 1.58-bit C++ Neural Swarm Simulation
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Engine: AVX2](https://img.shields.io/badge/Engine-AVX2-blue.svg)](#architecture)
-[![Architecture: Sovereign Swarm](https://img.shields.io/badge/Architecture-Sovereign_Swarm-green.svg)](#swarm-mechanics)
+BitNet-Agent is a C++ implementation of a 1.58-bit (ternary) neural simulation utilizing a distributed agent mesh. The engine is optimized for AVX2 SIMD hardware and focuses on memory-efficient weight paging and parallel head processing.
 
-BitNet-Agent is a high-performance, C++ based neural simulation engine designed for autonomous 1.58-bit (ternary) agents. Unlike standard LLM implementations, this engine utilizes a **Sovereign Swarm** architecture where intelligence is distributed across a self-organizing mesh of independent nodes.
+## Technical Specifications
 
-## 🚀 Key Innovations
+- **Bit-Packing Protocol:** Weights and states are stored using 2-bit packing (4 values per `uint8_t`), achieving a 75% reduction in disk and memory footprint compared to 8-bit storage.
+- **Just-in-Time weight Paging:** Individual agent weights are loaded from disk only during active inference and purged immediately after, capping global RAM usage at the size of a single agent's parameters plus metadata.
+- **Dynamic Node Mitosis:** The simulation spawns or merges logical agents based on the bit-entropy of the input data stream.
+- **Parallel Head Processing:** Multi-head attention operations are distributed across parallel CPU threads using `std::async`.
+- **Ternary Quantization:** On-disk persistence utilizes a `{-1, 0, 1}` mapping for agent state serialization.
 
-- **Extreme Hardware Sincerity (2-bit Packing):** Achieve a **75% reduction** in Disk and RAM usage by packing four ternary values ({-1, 0, 1}) into every single byte.
-- **Just-in-Time (JIT) Metabolism:** Infinite swarm scaling on limited hardware. Weights are hydrated from disk into the CPU cache only during an agent's active pass and purged immediately after.
-- **Neural-Gated Mitosis:** Swarm density is dynamic. Agents autonomously split (mitosis) or merge based on the information entropy of the processed data.
-- **Inter-Agent Council Parallelism:** Multi-head attention is performed by concurrent sub-agents running on parallel CPU threads, significantly reducing cascade latency.
-- **Bitwise Persistence (Freezing):** Seamlessly save and reconstitute agent states with zero significant neural loss using 1.58-bit quantization.
+## Implementation Workflow
 
-## 🏗 Architecture
+1. **Tokenization:** Input stream is processed into localized character-integer mappings.
+2. **Mesh Expansion:** Nodes are allocated dynamically based on complexity thresholds.
+3. **Council Inference:** Sub-agents execute parallel weight-sum operations using AVX2 intrinsics.
+4. **Resonance Handoff:** Inter-agent data transfer is gated by attention scores (scalar dot-product).
+5. **Serialization:** Agent states are bit-packed and written to disk for persistence.
 
-The BitNet-Agent engine follows a "Minimal Engineering" philosophy, relying on raw AVX2 SIMD instructions and native C++ memory management rather than external libraries.
+## Performance Profile
 
-### Swarm Pipeline
-```mermaid
-graph LR
-    A[User Prompt] --> B[Sovereign Tokenizer]
-    B --> C[Dynamic Swarm Mitosis]
-    C --> D[Head-Agent Council]
-    D --> E[Neural-Gated Trade]
-    E --> F[Bitwise Persistence]
-```
-
-## 📊 Benchmarks (1.0 Release)
-
-| Metric | Phase 1 (Legacy) | Phase 37 (Hardened) | Improvement |
+| Parameter | 8-bit Baseline | 1.58-bit (Packed) | Efficiency |
 | :--- | :--- | :--- | :--- |
-| **Weight Storage (512 Params)** | 512 Bytes | 128 Bytes | **75% Reduction** |
-| **Active RAM Floor** | Persistent Total | Node-Local + 8B Header | **O(1) Scalability** |
-| **Cascade Latency (3 Nodes)** | ~2500 us | 611 - 966 us | **~60% Faster** |
-| **State Persistence Error** | N/A (Floating) | < 0.001% (Bit-Identical) | **Mathematical Sincerity** |
+| **Storage per 512 Weights** | 512 Bytes | 128 Bytes | 75% Reduction |
+| **RAM Scaling** | O(N) | O(1) + Meta | Constant Floor |
+| **Execution Latency** | ~2.5 ms | 0.6 - 0.9 ms | AVX2 Optimized |
 
-## 🛠 Getting Started
+## Usage
 
-### Prerequisites
+### Build Requirements
 - Windows OS
-- Microsoft Visual C++ Compiler (MSVC / `cl.exe`)
-- Python 3.x (for the Sovereignty Bridge)
+- MSVC Compiler (`cl.exe`)
+- Python 3.x
 
-### 1. Build the Engine
+### 1. Build Engine
+Execute `build.bat` to compile with `/arch:AVX2`.
 ```cmd
-# Automatically initializes MSVC and compiles with /arch:AVX2
 build.bat
 ```
 
-### 2. The Sovereignty Bridge (Importing Weights)
-Use the included bridge to convert external weights into the Sovereign 2-bit packed format:
+### 2. Weight Conversion
+Use the included bridge to prepare binary payloads from external float matrices.
 ```bash
 python scripts/bridge.py --mock --output real_weights.bin
 ```
 
-## 📜 Sovereign Constitution
-Development is governed by the **Sovereign Development Constitution** (`docs/RULES.md`), which mandates technical transparency, numerical verification (Rule 1), and an Agent-First design philosophy (Rule 11).
+## Development Protocol
+Refer to `docs/RULES.md` for the technical constitution and phase-by-phase verification logs.
 
-## ⚖️ License
-Distributed under the MIT License. See `LICENSE` for more information.
+## License
+MIT License. See `LICENSE` for details.
