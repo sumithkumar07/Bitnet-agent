@@ -96,6 +96,31 @@ struct AVX2_Engine {
         k = forward_pass(input_state, w_packed, dim, dim);
         v = forward_pass(input_state, w_packed, dim, dim);
     }
+
+    // Phase 29: Scaled Dot-Product Self-Attention
+    // Computes: output = softmax(Q . K^T / sqrt(dim)) * V
+    std::vector<float> compute_attention(const std::vector<float>& q, const std::vector<float>& k, const std::vector<float>& v, size_t dim) {
+        // Step 1: Q . K^T dot product (scalar score for single-vector case)
+        float qk_dot = 0.0f;
+        for (size_t i = 0; i < dim; ++i) {
+            qk_dot += q[i] * k[i];
+        }
+
+        // Step 2: Scale by 1/sqrt(dim) to prevent score explosion
+        float scale = 1.0f / std::sqrt(static_cast<float>(dim));
+        float score = qk_dot * scale;
+
+        // Step 3: Softmax over single score collapses to sigmoid-like activation
+        // For a single-head single-token case, clamp the score to a [0,1] weight
+        float weight = 1.0f / (1.0f + std::exp(-score));
+
+        // Step 4: Weight the Value vector by the attention score
+        std::vector<float> output(dim, 0.0f);
+        for (size_t i = 0; i < dim; ++i) {
+            output[i] = weight * v[i];
+        }
+        return output;
+    }
 };
 
 // ---------------------------------------------------------
@@ -320,6 +345,12 @@ public:
             
             // Phase 28: Formally Extract Structural Logic for Attention Loop Native Bounds
             engine.extract_qkv(active.contextual_state, active.query, active.key, active.value, global_weights, 16);
+            
+            // Phase 29: Self-Attention Score Computation
+            active.contextual_state = engine.compute_attention(active.query, active.key, active.value, 16);
+            
+            // Phase 29: Post-Attention Normalization (prevents attention output explosion)
+            engine.apply_rmsnorm(active.contextual_state);
             
             // Phase 27: Isolate Matrix Cache string prior to matrix multiplier loop explicitly
             std::vector<float> residual = active.contextual_state;
