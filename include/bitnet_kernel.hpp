@@ -51,6 +51,21 @@ struct AVX2_Engine {
         }
         return y;
     }
+
+    // Phase 24: Mathematical Non-Linearity Verification
+    void apply_relu(std::vector<float>& x) {
+        __m128 zero = _mm_setzero_ps();
+        size_t size = x.size();
+        size_t i = 0;
+        for (; i + 3 < size; i += 4) {
+            __m128 vec = _mm_loadu_ps(&x[i]);
+            vec = _mm_max_ps(vec, zero);
+            _mm_storeu_ps(&x[i], vec);
+        }
+        for (; i < size; ++i) {
+            if (x[i] < 0.0f) x[i] = 0.0f;
+        }
+    }
 };
 
 // ---------------------------------------------------------
@@ -261,6 +276,9 @@ public:
             // Agent executes AVX2 natively on local state
             // Dummy structural rows=16, cols(weights)=16 parameter dimension for the 64-byte HuggingFace empirical block
             active.contextual_state = engine.forward_pass(active.contextual_state, global_weights, 16, 16); 
+            
+            // Phase 24: Bound mathematical limits using isolated ReLU sequence
+            engine.apply_relu(active.contextual_state);
             
             // Mitotic Chain rule: If this agent is not the tail, seamlessly handoff the mutated result
             if (iter < tail_agent_id) {
