@@ -273,6 +273,13 @@ public:
         for (uint32_t iter = root_agent_id; iter <= tail_agent_id; ++iter) {
             NodeMemory& active = get_agent(iter);
             
+            // Phase 25: Bridging Memory to Compute (Native Integer to Float Embed)
+            for (size_t t = 0; t < active.current_tokens; ++t) {
+                if (t < active.contextual_state.size()) {
+                    active.contextual_state[t] += static_cast<float>(active.token_cache[t]) * 0.01f;
+                }
+            }
+            
             // Agent executes AVX2 natively on local state
             // Dummy structural rows=16, cols(weights)=16 parameter dimension for the 64-byte HuggingFace empirical block
             active.contextual_state = engine.forward_pass(active.contextual_state, global_weights, 16, 16); 

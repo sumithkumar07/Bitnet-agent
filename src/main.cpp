@@ -15,8 +15,9 @@ int main() {
         sandbox.load_weight_matrix("real_weights.bin");
         std::cout << "[SIMULATOR] Simulator loaded test weight matrix." << std::endl;
     } catch(const std::exception& e) {
-        std::cout << "[KERNEL-WARN] " << e.what() << ". Utilizing zeroed mock matrix for verification testing." << std::endl;
-        sandbox.global_weights.assign(256, 0);
+        std::cout << "[KERNEL-WARN] " << e.what() << ". Utilizing bounded mock matrix for verification testing." << std::endl;
+        // 0x55 maps natively to empirical '1' via hardware table mask
+        sandbox.global_weights.assign(256, 0x55);
     }
     
     // 3. Initiate Array Origin
