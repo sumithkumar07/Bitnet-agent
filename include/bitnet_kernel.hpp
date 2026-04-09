@@ -97,29 +97,24 @@ struct AVX2_Engine {
         v = forward_pass(input_state, w_packed, dim, dim);
     }
 
-    // Phase 29: Scaled Dot-Product Self-Attention
-    // Computes: output = softmax(Q . K^T / sqrt(dim)) * V
-    std::vector<float> compute_attention(const std::vector<float>& q, const std::vector<float>& k, const std::vector<float>& v, size_t dim) {
-        // Step 1: Q . K^T dot product (scalar score for single-vector case)
+    // Phase 29/30: Scaled Dot-Product Self-Attention (Neural Gating Support)
+    // Returns {output_vector, attention_score}
+    struct AttentionResult { std::vector<float> output; float weight; };
+    
+    AttentionResult compute_attention(const std::vector<float>& q, const std::vector<float>& k, const std::vector<float>& v, size_t dim) {
+        // Step 1: Q . K^T dot product
         float qk_dot = 0.0f;
-        for (size_t i = 0; i < dim; ++i) {
-            qk_dot += q[i] * k[i];
-        }
+        for (size_t i = 0; i < dim; ++i) { qk_dot += q[i] * k[i]; }
 
-        // Step 2: Scale by 1/sqrt(dim) to prevent score explosion
+        // Step 2-3: Scale and Sigmoid-Softmax
         float scale = 1.0f / std::sqrt(static_cast<float>(dim));
-        float score = qk_dot * scale;
+        float weight = 1.0f / (1.0f + std::exp(-(qk_dot * scale)));
 
-        // Step 3: Softmax over single score collapses to sigmoid-like activation
-        // For a single-head single-token case, clamp the score to a [0,1] weight
-        float weight = 1.0f / (1.0f + std::exp(-score));
-
-        // Step 4: Weight the Value vector by the attention score
+        // Step 4: Weight the Value vector
         std::vector<float> output(dim, 0.0f);
-        for (size_t i = 0; i < dim; ++i) {
-            output[i] = weight * v[i];
-        }
-        return output;
+        for (size_t i = 0; i < dim; ++i) { output[i] = weight * v[i]; }
+        
+        return {output, weight};
     }
 };
 
@@ -346,8 +341,10 @@ public:
             // Phase 28: Formally Extract Structural Logic for Attention Loop Native Bounds
             engine.extract_qkv(active.contextual_state, active.query, active.key, active.value, global_weights, 16);
             
-            // Phase 29: Self-Attention Score Computation
-            active.contextual_state = engine.compute_attention(active.query, active.key, active.value, 16);
+            // Phase 29/30: Neural-Gated Attention Scoring
+            auto attn = engine.compute_attention(active.query, active.key, active.value, 16);
+            active.contextual_state = attn.output;
+            float trade_gate = attn.weight;
             
             // Phase 29: Post-Attention Normalization (prevents attention output explosion)
             engine.apply_rmsnorm(active.contextual_state);
@@ -368,11 +365,17 @@ public:
             // Phase 27: Combine residual history structurally bypassing historical decay loop natively
             engine.apply_residual(active.contextual_state, residual);
             
-            // Mitotic Chain rule: If this agent is not the tail, seamlessly handoff the mutated result
+            // Phase 30: AI Gated Inter-Agent Trade (Knowledge Handoff)
+            // Instead of a mindless copy, we use the captured 'trade_gate' (attention score) 
+            // to project the sender's knowledge into the receiver's state.
             if (iter < tail_agent_id) {
-                // To safely overwrite the untouched child state, use std::copy manually for the Trade
                 NodeMemory& next_agent = get_agent(iter + 1);
-                std::copy(active.contextual_state.begin(), active.contextual_state.end(), next_agent.contextual_state.begin());
+                for (size_t i = 0; i < active.contextual_state.size(); ++i) {
+                    // Signal Resilience: The next agent starts with a 'Neural Resonance' of the previous state
+                    next_agent.contextual_state[i] = active.contextual_state[i] * trade_gate;
+                }
+                std::cout << "[SIMULATOR] Agent " << iter << " -> Agent " << (iter+1) 
+                          << " | Neural Trade Resonance: " << (trade_gate * 100.0f) << "%" << std::endl;
             }
         }
     }

@@ -284,3 +284,17 @@ These rules override everything else. If we break them, we go back.
 - Added post-attention RMSNorm to bound outputs between the attention and FFN layers, mirroring the pre-norm architecture used in modern LLMs (Llama, BitNet).
 - Validated via `build.bat`: Output stabilized to `2 2 2 2 2 2 2 2` — bounded, dynamically influenced by tokens, and mathematically stable across all 10 sequence nodes.
 **Outcome:** PASSED. The engine now executes a complete single-head Transformer block: Embed -> QKV -> Attention -> Norm -> FFN -> ReLU -> Norm -> Residual.
+
+### Rule 11: Agent-First Architecture
+> Prioritize **Agentic Intelligence** (Mitosis, Trading, Swarm Interaction) over **Standard LLM Feature Parity**.
+> If we have a choice between adding a standard Transformer layer complexity (like Multi-Head Attention) or making the Agent Handoff smarter, we **ALWAYS** choose the Agentic fix first. We are building a Sovereign Swarm, not a Llama clone.
+
+
+### Corrected Phase 30 Verification (Neural-Gated Agent Trading)
+**Goal:** Replace the mindless std::copy inter-agent handoff with a Neural Gated Projection that uses Attention scores to prioritize information flow between agents.
+**Result:**
+- Modified compute_attention to capture and return the scalar attention weight.
+- Refactored execute_swarm_inference to use this weight as a gating factor for inter-agent memory trades.
+- Integrated signal resonance logging to track knowledge transfer efficiency across the swarm.
+- Validated via uild.bat: Observed successful [SIMULATOR] Neural Trade logs with stable coefficient outputs, confirming the agents are now neurally interconnected.
+**Outcome:** PASSED. The repository core is now technically grounded in sovereign swarm intelligence.
