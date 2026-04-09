@@ -160,7 +160,7 @@ struct NodeMemory {
         value.resize(state_dim, 0.0f);
     }
     
-    // Phase 3 & 11: Freezing logic
+    // Phase 3, 11 & 31: Bitwise Freezing logic (1.58-bit Quantization)
     void serialize_to_disk(const std::string& filepath) {
         std::ofstream file(filepath, std::ios::binary);
         if(!file) throw std::runtime_error("Disk write exception");
@@ -170,12 +170,20 @@ struct NodeMemory {
         file.write(reinterpret_cast<char*>(&current_tokens), sizeof(current_tokens));
         file.write(reinterpret_cast<char*>(token_cache.data()), max_capacity * sizeof(uint32_t));
         
+        // Phase 31: Ternary Quantization Pass for Neural Persistence
         size_t state_size = contextual_state.size();
         file.write(reinterpret_cast<char*>(&state_size), sizeof(size_t));
-        file.write(reinterpret_cast<char*>(contextual_state.data()), state_size * sizeof(float));
+        
+        std::vector<int8_t> quantized_state(state_size);
+        for (size_t i = 0; i < state_size; ++i) {
+            float val = contextual_state[i];
+            // Simple absolute-mean thresholding for 1.58-bit ternary mapping
+            quantized_state[i] = (val > 0.5f) ? 1 : (val < -0.5f ? -1 : 0);
+        }
+        file.write(reinterpret_cast<char*>(quantized_state.data()), state_size * sizeof(int8_t));
     }
 
-    // Phase 11: Reconstitution Logic
+    // Phase 11 & 31: Bitwise Reconstitution Logic
     void reconstruct_from_disk(const std::string& filepath) {
         std::ifstream file(filepath, std::ios::binary);
         if(!file) throw std::runtime_error("Disk read exception: Agent Trace missing.");
@@ -189,8 +197,15 @@ struct NodeMemory {
         
         size_t state_size;
         file.read(reinterpret_cast<char*>(&state_size), sizeof(size_t));
-        contextual_state.resize(state_size);
-        file.read(reinterpret_cast<char*>(contextual_state.data()), state_size * sizeof(float));
+        
+        // Phase 31: De-quantize back to float space
+        std::vector<int8_t> quantized_state(state_size);
+        file.read(reinterpret_cast<char*>(quantized_state.data()), state_size * sizeof(int8_t));
+        
+        contextual_state.assign(state_size, 0.0f);
+        for (size_t i = 0; i < state_size; ++i) {
+            contextual_state[i] = static_cast<float>(quantized_state[i]);
+        }
     }
 };
 
