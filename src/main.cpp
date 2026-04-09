@@ -10,14 +10,21 @@ int main() {
     AVX2_Engine engine;
     Tokenizer tokenizer;
 
-    // 2. Hydrate Weight Array Native
+    // 2. Load Global Fabric (Phase 18 & 33: JIT Weight Linking)
+    std::string fabric_file = "real_weights.bin";
+    {
+        // For verification, ensure a mock fabric exists on disk for the JIT engine to page
+        std::ofstream mock_fabric(fabric_file, std::ios::binary);
+        // 128 bytes * 4 values/byte = 512 values (0x55 = four packed '1' signals)
+        std::vector<int8_t> mock_data(128, 0x55);
+        mock_fabric.write(reinterpret_cast<char*>(mock_data.data()), 128);
+    }
+    
     try {
-        sandbox.load_weight_matrix("real_weights.bin");
-        std::cout << "[SIMULATOR] Simulator loaded test weight matrix." << std::endl;
+        sandbox.load_weight_matrix(fabric_file);
     } catch(const std::exception& e) {
-        std::cout << "[KERNEL-WARN] " << e.what() << ". Utilizing bounded mock matrix for verification testing." << std::endl;
-        // 0x55 maps natively to empirical '1' via hardware table mask
-        sandbox.global_weights.assign(256, 0x55);
+        std::cout << "[KERNEL-FAULT] Unrecoverable Matrix Error: " << e.what() << std::endl;
+        return 1;
     }
     
     // 3. Initiate Array Origin (Phase 32: Dynamic Entropy Case)

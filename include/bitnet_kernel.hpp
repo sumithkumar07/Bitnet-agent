@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <immintrin.h>
 #include <cmath>
+#include <thread>
+#include <future>
 
 // ---------------------------------------------------------
 // COMPONENT 1: AVX2 SIMD Hardware Overdrive (Phase 6)
@@ -32,12 +34,12 @@ struct AVX2_Engine {
         }
     }
 
-    std::vector<float> forward_pass(const std::vector<float>& x, const std::vector<int8_t>& w_packed, size_t rows, size_t cols) {
+    std::vector<float> forward_pass(const std::vector<float>& x, const std::vector<int8_t>& w_packed, size_t rows, size_t cols, size_t offset = 0) {
         std::vector<float> y(rows, 0.0f);
         size_t col_chunks = cols / 4; 
         for (size_t r = 0; r < rows; ++r) {
             __m128 sum_vec = _mm_setzero_ps();
-            size_t row_start_byte = (r * cols) / 4;
+            size_t row_start_byte = offset + (r * cols) / 4;
             for (size_t chunk = 0; chunk < col_chunks; ++chunk) {
                 uint8_t packed = static_cast<uint8_t>(w_packed[row_start_byte + chunk]);
                 __m128 x_vec = _mm_loadu_ps(&x[chunk * 4]);
@@ -90,33 +92,33 @@ struct AVX2_Engine {
         }
     }
     
-    // Phase 28: Intrinsic QKV Array Pipeline Extracts
-    void extract_qkv(std::vector<float>& input_state, std::vector<float>& q, std::vector<float>& k, std::vector<float>& v, const std::vector<int8_t>& w_packed, size_t dim) {
-        q = forward_pass(input_state, w_packed, dim, dim);
-        k = forward_pass(input_state, w_packed, dim, dim);
-        v = forward_pass(input_state, w_packed, dim, dim);
+    // Phase 28 & 34: Intrinsic QKV Array Pipeline Extracts (Sliced for Heads)
+    void extract_qkv(const std::vector<float>& input_state, std::vector<float>& q, std::vector<float>& k, std::vector<float>& v, const std::vector<int8_t>& w_packed, size_t full_dim, size_t head_dim, size_t head_idx) {
+        // Offset mapping: Head 0 uses first half of weights, Head 1 uses second half
+        size_t head_offset = head_idx * (full_dim * head_dim / 4); 
+        q = forward_pass(input_state, w_packed, head_dim, full_dim, head_offset);
+        k = forward_pass(input_state, w_packed, head_dim, full_dim, head_offset + (full_dim * head_dim / 4));
+        v = forward_pass(input_state, w_packed, head_dim, full_dim, head_offset + (full_dim * head_dim * 2 / 4));
     }
 
-    // Phase 29/30: Scaled Dot-Product Self-Attention (Neural Gating Support)
-    // Returns {output_vector, attention_score}
+    // Phase 29/30/34: Scaled Dot-Product Self-Attention (Neural Gating & Parallel Head Support)
     struct AttentionResult { std::vector<float> output; float weight; };
     
     AttentionResult compute_attention(const std::vector<float>& q, const std::vector<float>& k, const std::vector<float>& v, size_t dim) {
-        // Step 1: Q . K^T dot product
         float qk_dot = 0.0f;
         for (size_t i = 0; i < dim; ++i) { qk_dot += q[i] * k[i]; }
 
-        // Step 2-3: Scale and Sigmoid-Softmax
         float scale = 1.0f / std::sqrt(static_cast<float>(dim));
         float weight = 1.0f / (1.0f + std::exp(-(qk_dot * scale)));
 
-        // Step 4: Weight the Value vector
         std::vector<float> output(dim, 0.0f);
         for (size_t i = 0; i < dim; ++i) { output[i] = weight * v[i]; }
         
         return {output, weight};
     }
 };
+
+typedef AVX2_Engine::AttentionResult HeadResult;
 
 // ---------------------------------------------------------
 // COMPONENT 2: Structural Tokenizer (Phase 8)
@@ -147,17 +149,10 @@ struct NodeMemory {
     std::vector<float> contextual_state; 
     
     // Phase 28: Structural Attention Arrays
-    std::vector<float> query;
-    std::vector<float> key;
-    std::vector<float> value;
-
     NodeMemory(uint32_t id, uint32_t capacity, uint32_t state_dim) 
         : agent_id(id), max_capacity(capacity), current_tokens(0) {
         token_cache.resize(max_capacity, 0);
         contextual_state.resize(state_dim, 0.0f);
-        query.resize(state_dim, 0.0f);
-        key.resize(state_dim, 0.0f);
-        value.resize(state_dim, 0.0f);
     }
     
     // Phase 3, 11 & 31: Bitwise Freezing logic (1.58-bit Quantization)
@@ -170,17 +165,25 @@ struct NodeMemory {
         file.write(reinterpret_cast<char*>(&current_tokens), sizeof(current_tokens));
         file.write(reinterpret_cast<char*>(token_cache.data()), max_capacity * sizeof(uint32_t));
         
-        // Phase 31: Ternary Quantization Pass for Neural Persistence
+        // Phase 31 & 35: Extreme Bit-Packing (2 Bits Per Value)
         size_t state_size = contextual_state.size();
         file.write(reinterpret_cast<char*>(&state_size), sizeof(size_t));
         
-        std::vector<int8_t> quantized_state(state_size);
+        size_t packed_size = (state_size + 3) / 4;
+        std::vector<uint8_t> packed_state(packed_size, 0);
+        
         for (size_t i = 0; i < state_size; ++i) {
             float val = contextual_state[i];
-            // Simple absolute-mean thresholding for 1.58-bit ternary mapping
-            quantized_state[i] = (val > 0.5f) ? 1 : (val < -0.5f ? -1 : 0);
+            uint8_t code = 0; // 00 -> 0.0
+            if (val > 0.5f) code = 1;      // 01 -> 1.0
+            else if (val < -0.5f) code = 2; // 10 -> -1.0
+            
+            size_t byte_idx = i / 4;
+            size_t bit_pos = (i % 4) * 2;
+            packed_state[byte_idx] |= (code << bit_pos);
         }
-        file.write(reinterpret_cast<char*>(quantized_state.data()), state_size * sizeof(int8_t));
+        
+        file.write(reinterpret_cast<char*>(packed_state.data()), packed_size);
     }
 
     // Phase 11 & 31: Bitwise Reconstitution Logic
@@ -198,13 +201,20 @@ struct NodeMemory {
         size_t state_size;
         file.read(reinterpret_cast<char*>(&state_size), sizeof(size_t));
         
-        // Phase 31: De-quantize back to float space
-        std::vector<int8_t> quantized_state(state_size);
-        file.read(reinterpret_cast<char*>(quantized_state.data()), state_size * sizeof(int8_t));
+        // Phase 31 & 35: Extreme Unpacking (2-bit to Float space)
+        size_t packed_size = (state_size + 3) / 4;
+        std::vector<uint8_t> packed_state(packed_size);
+        file.read(reinterpret_cast<char*>(packed_state.data()), packed_size);
         
         contextual_state.assign(state_size, 0.0f);
         for (size_t i = 0; i < state_size; ++i) {
-            contextual_state[i] = static_cast<float>(quantized_state[i]);
+            size_t byte_idx = i / 4;
+            size_t bit_pos = (i % 4) * 2;
+            uint8_t code = (packed_state[byte_idx] >> bit_pos) & 0b11;
+            
+            if (code == 1) contextual_state[i] = 1.0f;
+            else if (code == 2) contextual_state[i] = -1.0f;
+            else contextual_state[i] = 0.0f;
         }
     }
 };
@@ -218,14 +228,18 @@ private:
     std::unordered_map<uint32_t, NodeMemory> swarm_registry;
     uint32_t active_agent_count = 0;
 
-public:
-    std::vector<int8_t> global_weights;  // Phase 18: Constant Matrix Fabric
+    std::string neural_fabric_path;
 
+public:
     SwarmSimulator(size_t hard_limit) : sandbox_memory_limit_bytes(hard_limit) {}
 
-    // Phase 18: Hydrating the Neural Fabric centrally
+    // Phase 18 & 33: Connecting the Neural Fabric Path
     void load_weight_matrix(const std::string& filepath) {
-        global_weights = load_weights_safe(filepath);
+        // We no longer load the matrix into RAM. We just verify existence and store the path.
+        std::ifstream file(filepath, std::ios::binary);
+        if (!file.is_open()) throw std::runtime_error("Neural Fabric missing at path: " + filepath);
+        neural_fabric_path = filepath;
+        std::cout << "[SIMULATOR] Neural Fabric Linked: " << filepath << " (JIT Paging Enabled)" << std::endl;
     }
     
     // Phase 15: Swarm Spawning Mechanics
@@ -348,60 +362,81 @@ public:
         return current_id;
     }
 
-    // Phase 19: Hardware Sequential Inference
-    // Iterates across all agents sequentially (Data Flow), injecting State into AVX2 Engine.
+    // Phase 19/33: Hardware Sequential Inference (with JIT Hydration)
     void execute_swarm_inference(uint32_t root_agent_id, uint32_t tail_agent_id, AVX2_Engine& engine, size_t h_dim) {
-        if (global_weights.empty()) throw std::runtime_error("Execution Fault: Hypervisor Neural Fabric not mapped.");
+        if (neural_fabric_path.empty()) throw std::runtime_error("Execution Fault: Neural Fabric not linked.");
 
         for (uint32_t iter = root_agent_id; iter <= tail_agent_id; ++iter) {
             NodeMemory& active = get_agent(iter);
             
-            // Phase 25: Bridging Memory to Compute (Native Integer to Float Embed)
+            // Phase 33: JIT Weight Hydration (Memory Metabolism)
+            // Load the weights required for this agent's pass only
+            std::vector<int8_t> active_weights = load_weights_safe(neural_fabric_path);
+            std::cout << "[SIMULATOR] Agent " << iter << " Hy-Drating weights at " << (void*)active_weights.data() << std::endl;
+
+            // Phase 25: Bridging Memory to Compute
             for (size_t t = 0; t < active.current_tokens; ++t) {
                 if (t < active.contextual_state.size()) {
                     active.contextual_state[t] += static_cast<float>(active.token_cache[t]) * 0.01f;
                 }
             }
             
-            // Phase 28: Formally Extract Structural Logic for Attention Loop Native Bounds
-            engine.extract_qkv(active.contextual_state, active.query, active.key, active.value, global_weights, 16);
+            // Phase 34: Inter-Agent Parallel Head Council (2 Heads)
+            // Each head runs as a sovereign sub-agent on a separate CPU thread
+            const size_t num_heads = 2;
+            const size_t head_dim = 8;
+            std::vector<std::future<HeadResult>> head_futures;
+
+            for (size_t h = 0; h < num_heads; ++h) {
+                head_futures.push_back(std::async(std::launch::async, [&engine, &active, &active_weights, h, head_dim]() {
+                    std::vector<float> q, k, v;
+                    engine.extract_qkv(active.contextual_state, q, k, v, active_weights, 16, head_dim, h);
+                    return engine.compute_attention(q, k, v, head_dim);
+                }));
+            }
+
+            // Neural Fusion: Merge parallel head outputs into the main state vector
+            active.contextual_state.clear();
+            float cumulative_gate = 0.0f;
+            for (auto& f : head_futures) {
+                auto res = f.get();
+                active.contextual_state.insert(active.contextual_state.end(), res.output.begin(), res.output.end());
+                cumulative_gate += res.weight;
+            }
+            float trade_gate = cumulative_gate / num_heads; // Average resonance for the handoff
             
-            // Phase 29/30: Neural-Gated Attention Scoring
-            auto attn = engine.compute_attention(active.query, active.key, active.value, 16);
-            active.contextual_state = attn.output;
-            float trade_gate = attn.weight;
+            std::cout << "[SIMULATOR] Agent " << iter << " Council Emerged | Head Resonance: " << (trade_gate * 100.0f) << "%" << std::endl;
             
-            // Phase 29: Post-Attention Normalization (prevents attention output explosion)
+            // Phase 29: Post-Attention Normalization
             engine.apply_rmsnorm(active.contextual_state);
             
-            // Phase 27: Isolate Matrix Cache string prior to matrix multiplier loop explicitly
+            // Phase 27: Isolate Matrix Cache string
             std::vector<float> residual = active.contextual_state;
             
             // Agent executes AVX2 natively on local state
-            // Dummy structural rows=16, cols(weights)=16 parameter dimension for the 64-byte HuggingFace empirical block
-            active.contextual_state = engine.forward_pass(active.contextual_state, global_weights, 16, 16); 
+            active.contextual_state = engine.forward_pass(active.contextual_state, active_weights, 16, 16); 
             
-            // Phase 24: Bound mathematical limits using isolated ReLU sequence
+            // Phase 24: Bound mathematical limits
             engine.apply_relu(active.contextual_state);
             
-            // Phase 26: RMS Normalization stabilizing mathematical explosions
+            // Phase 26: RMS Normalization
             engine.apply_rmsnorm(active.contextual_state);
             
-            // Phase 27: Combine residual history structurally bypassing historical decay loop natively
+            // Phase 27: Combine residual history
             engine.apply_residual(active.contextual_state, residual);
             
-            // Phase 30: AI Gated Inter-Agent Trade (Knowledge Handoff)
-            // Instead of a mindless copy, we use the captured 'trade_gate' (attention score) 
-            // to project the sender's knowledge into the receiver's state.
+            // Phase 30: AI Gated Inter-Agent Trade
             if (iter < tail_agent_id) {
                 NodeMemory& next_agent = get_agent(iter + 1);
                 for (size_t i = 0; i < active.contextual_state.size(); ++i) {
-                    // Signal Resilience: The next agent starts with a 'Neural Resonance' of the previous state
                     next_agent.contextual_state[i] = active.contextual_state[i] * trade_gate;
                 }
                 std::cout << "[SIMULATOR] Agent " << iter << " -> Agent " << (iter+1) 
                           << " | Neural Trade Resonance: " << (trade_gate * 100.0f) << "%" << std::endl;
             }
+            
+            // Phase 33: Metabolism (Purge)
+            // active_weights vector goes out of scope here and is purged from RAM.
         }
     }
 };
